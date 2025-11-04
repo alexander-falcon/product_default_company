@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 
-from odoo import models, fields, api, SUPERUSER_ID
-from odoo.exceptions import ValidationError
+from odoo import models, api, _
 import logging
 
 _logger = logging.getLogger(__name__)
@@ -12,71 +11,61 @@ class ProductTemplate(models.Model):
     @api.model
     def default_get(self, fields_list):
         res = super().default_get(fields_list)
+
         if 'company_ids' in fields_list and not res.get('company_ids'):
             try:
                 user = self.env.user
-                if user.has_group('base.group_system'):
-                    active_company = self.env.company
-                    if active_company:
-                        res['company_ids'] = [(6, 0, [active_company.id])]
-                        _logger.info("Asignando company_ids desde env.company para administrador: %s", active_company.name)
-                    else:
-                        _logger.warning("No se pudo obtener la compañía activa desde env.company")
+                company = (
+                    self.env.company if len(user.company_ids) > 1
+                    else user.company_id
+                )
+
+                if company:
+                    res['company_ids'] = [(6, 0, [company.id])]
+                    _logger.info(
+                        "[default_get] Asignado company_ids='%s' (%s) al producto por defecto '%s' (usuario: %s)",
+                        company.id, company.name, res.get('name', 'Sin nombre'), user.login
+                    )
                 else:
-                    user_company = user.company_id
-                    if user_company:
-                        res['company_ids'] = [(6, 0, [user_company.id])]
-                        _logger.info("Asignando company_ids desde user.company_id para usuario: %s", user_company.name)
-                    else:
-                        _logger.warning("El usuario no tiene una compañía principal asignada")
+                    _logger.warning(
+                        "[default_get] No se pudo determinar la compañía activa para el usuario '%s'. No se asignó company_ids al producto %s.",
+                        user.login, res.get('name', 'Sin nombre')
+                    )
             except Exception as e:
-                _logger.warning("Error al asignar company_ids en default_get: %s", e)
+                _logger.exception(
+                    "[default_get] Error inesperado al asignar company_ids por defecto al producto '%s': %s",
+                    res.get('name', 'Sin nombre'), e
+                )
+
         return res
 
-    @api.model
-    def create(self, vals):
-        if not vals.get('company_ids'):
+    @api.model_create_multi
+    def create(self, vals_list):
+        user = self.env.user
+        company = (
+            self.env.company if len(user.company_ids) > 1
+            else user.company_id
+        )
+
+        for vals in vals_list:
             try:
-                user = self.env.user if self.env.user.id != SUPERUSER_ID else self.env['res.users'].browse(SUPERUSER_ID)
-                if user.has_group('base.group_system'):
-                    active_company = self.env.company
-                    if active_company:
-                        vals['company_ids'] = [(6, 0, [active_company.id])]
-                        _logger.info("Asignando company_ids desde env.company para administrador: %s", active_company.name)
-                else:
-                    user_company = user.company_id
-                    if user_company:
-                        vals['company_ids'] = [(6, 0, [user_company.id])]
-                        _logger.info("Asignando company_ids desde user.company_id para usuario: %s", user_company.name)
+                product_name = vals.get('name', 'Sin nombre')
+
+                if 'company_ids' not in vals and company:
+                    vals['company_ids'] = [(6, 0, [company.id])]
+                    _logger.info(
+                        "[create] Asignado company_ids='%s' (%s) al producto '%s' (usuario: %s)",
+                        company.id, company.name, product_name, user.login
+                    )
+                elif 'company_ids' not in vals:
+                    _logger.warning(
+                        "[create] No se pudo determinar la compañía activa. Se omitió company_ids para el producto '%s' (usuario: %s)",
+                        product_name, user.login
+                    )
             except Exception as e:
-                _logger.warning("Error al asignar company_ids en create: %s", e)
-        return super().create(vals)
+                _logger.exception(
+                    "[create] Error al intentar asignar company_ids al producto '%s': %s",
+                    vals.get('name', 'Sin nombre'), e
+                )
 
-    def write(self, vals):
-        if self.env.context.get('skip_company_check'):
-            return super().write(vals)
-        res = super().write(vals)
-        for record in self:
-            if not record.company_ids:
-                try:
-                    user = self.env.user if self.env.user.id != SUPERUSER_ID else self.env['res.users'].browse(SUPERUSER_ID)
-                    user_company = user.company_id
-                    if user_company:
-                        record.with_context(skip_company_check=True).sudo().write({
-                            'company_ids': [(6, 0, [user_company.id])]
-                        })
-                        _logger.info("Restaurando company_ids para producto '%s' con la compañía del usuario: %s", record.name, user_company.name)
-                    else:
-                        _logger.warning("No se pudo obtener una compañía válida desde el usuario para restaurar company_ids en '%s'", record.name)
-                except Exception as e:
-                    _logger.warning("Error al restaurar company_ids en write: %s", e)
-        return res
-
-    @api.constrains('company_ids')
-    def _check_company_ids(self):
-        if self.env.context.get('skip_company_check'):
-            return
-        for record in self:
-            if not record.company_ids:
-                raise ValidationError("No se puede dejar el campo 'company_ids' vacío en el producto.")
-    
+        return super().create(vals_list)
