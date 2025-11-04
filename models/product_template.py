@@ -23,18 +23,17 @@ class ProductTemplate(models.Model):
                 if company:
                     res['company_ids'] = [(6, 0, [company.id])]
                     _logger.info(
-                        "[default_get] Asignado company_ids='%s' (%s) al producto por defecto '%s' (usuario: %s)",
-                        company.id, company.name, res.get('name', 'Sin nombre'), user.login
+                        "[default_get] Asignado company_ids='%s' (%s) a producto por defecto (usuario: %s)",
+                        company.id, company.name, user.login
                     )
                 else:
                     _logger.warning(
-                        "[default_get] No se pudo determinar la compañía activa para el usuario '%s'. No se asignó company_ids al producto %s.",
-                        user.login, res.get('name', 'Sin nombre')
+                        "[default_get] No se pudo determinar la compañía activa para el usuario '%s'. No se asignó company_ids al producto.",
+                        user.login
                     )
             except Exception as e:
-                _logger.exception(
-                    "[default_get] Error inesperado al asignar company_ids por defecto al producto '%s': %s",
-                    res.get('name', 'Sin nombre'), e
+                _logger.exception("[default_get] Error inesperado al asignar company_ids por defecto al producto: %s", 
+                    e
                 )
 
         return res
@@ -51,13 +50,13 @@ class ProductTemplate(models.Model):
             try:
                 product_name = vals.get('name', 'Sin nombre')
 
-                if 'company_ids' not in vals and company:
+                if company:
                     vals['company_ids'] = [(6, 0, [company.id])]
                     _logger.info(
                         "[create] Asignado company_ids='%s' (%s) al producto '%s' (usuario: %s)",
                         company.id, company.name, product_name, user.login
                     )
-                elif 'company_ids' not in vals:
+                else:
                     _logger.warning(
                         "[create] No se pudo determinar la compañía activa. Se omitió company_ids para el producto '%s' (usuario: %s)",
                         product_name, user.login
@@ -65,7 +64,7 @@ class ProductTemplate(models.Model):
             except Exception as e:
                 _logger.exception(
                     "[create] Error al intentar asignar company_ids al producto '%s': %s",
-                    vals.get('name', 'Sin nombre'), e
+                    product_name, e
                 )
 
         return super().create(vals_list)
