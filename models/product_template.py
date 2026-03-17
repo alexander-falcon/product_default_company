@@ -44,7 +44,6 @@ class ProductTemplate(models.Model):
             self.env.company if len(user.company_ids) > 1
             else user.company_id
         )
-
         processed_vals_list = []
         for vals in vals_list:
             try:
