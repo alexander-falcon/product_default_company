@@ -21,10 +21,11 @@ class ProductTemplate(models.Model):
                 )
 
                 if company:
-                    res['company_ids'] = [(6, 0, [company.id])]
+                    company_sudo = company.sudo()
+                    res['company_ids'] = [(6, 0, [company_sudo.id])]
                     _logger.info(
                         "[default_get] Asignado company_ids='%s' (%s) a producto por defecto (usuario: %s)",
-                        company.id, company.name, user.login
+                        company_sudo.id, company_sudo.name, user.login
                     )
                 else:
                     _logger.warning(
@@ -46,25 +47,38 @@ class ProductTemplate(models.Model):
             else user.company_id
         )
 
+        processed_vals_list = []
         for vals in vals_list:
             try:
                 product_name = vals.get('name', 'Sin nombre')
+                new_vals = vals.copy()
 
                 if company:
-                    vals['company_ids'] = [(6, 0, [company.id])]
+                    company_sudo = company.sudo()
+                    new_vals['company_ids'] = [(6, 0, [company_sudo.id])]
                     _logger.info(
                         "[create] Asignado company_ids='%s' (%s) al producto '%s' (usuario: %s)",
-                        company.id, company.name, product_name, user.login
+                        company_sudo.id, company_sudo.name, product_name, user.login
                     )
                 else:
                     _logger.warning(
                         "[create] No se pudo determinar la compañía activa. Se omitió company_ids para el producto '%s' (usuario: %s)",
                         product_name, user.login
                     )
+                processed_vals_list.append(new_vals)
             except Exception as e:
                 _logger.exception(
                     "[create] Error al intentar asignar company_ids al producto '%s': %s",
                     product_name, e
                 )
+                processed_vals_list.append(vals)
 
-        return super().create(vals_list)
+        products = super(ProductTemplate, self.sudo()).create(processed_vals_list)
+
+        _logger.info(
+            "[create] Creados %d productos con sudo() para el usuario %s",
+            len(products), user.login
+        )
+        
+        return products
+        
