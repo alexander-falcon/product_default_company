@@ -19,7 +19,6 @@ class ProductTemplate(models.Model):
                     self.env.company if len(user.company_ids) > 1
                     else user.company_id
                 )
-
                 if company:
                     company_sudo = company.sudo()
                     res['company_ids'] = [(6, 0, [company_sudo.id])]
@@ -36,7 +35,6 @@ class ProductTemplate(models.Model):
                 _logger.exception("[default_get] Error inesperado al asignar company_ids por defecto al producto: %s", 
                     e
                 )
-
         return res
 
     @api.model_create_multi
