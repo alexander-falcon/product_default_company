@@ -20,19 +20,27 @@ class ProductTemplate(models.Model):
                     else user.company_id
                 )
                 if company:
-                    company_sudo = company.sudo()
-                    res['company_ids'] = [(6, 0, [company_sudo.id])]
-                    _logger.info(
-                        "[default_get] Asignado company_ids='%s' (%s) a producto por defecto (usuario: %s)",
-                        company_sudo.id, company_sudo.name, user.login
-                    )
+                    context_company = self.env.context.get('default_company_ids')
+                    if not context_company:
+                        company_sudo = company.sudo()
+                        res['company_ids'] = [(6, 0, [company_sudo.id])]
+                        _logger.info(
+                            "[default_get] Asignado company_ids='%s' (%s) a producto por defecto (usuario: %s, compañías permitidas: %s)",
+                            company_sudo.id, company_sudo.name, 
+                            user.login, len(user.company_ids)
+                        )
+                    else:
+                        _logger.info(
+                            "[default_get] Se respeta compañía del contexto: %s",
+                            context_company
+                        )
                 else:
                     _logger.warning(
                         "[default_get] No se pudo determinar la compañía activa para el usuario '%s'. No se asignó company_ids al producto.",
                         user.login
                     )
             except Exception as e:
-                _logger.exception("[default_get] Error inesperado al asignar company_ids por defecto al producto: %s", 
+                _logger.exception("[default_get] Error inesperado : %s",
                     e
                 )
         return res
@@ -50,17 +58,22 @@ class ProductTemplate(models.Model):
                 product_name = vals.get('name', 'Sin nombre')
                 new_vals = vals.copy()
 
-                if company:
+                if 'company_ids' not in vals and company:
                     company_sudo = company.sudo()
                     new_vals['company_ids'] = [(6, 0, [company_sudo.id])]
                     _logger.info(
                         "[create] Asignado company_ids='%s' (%s) al producto '%s' (usuario: %s)",
                         company_sudo.id, company_sudo.name, product_name, user.login
                     )
+                elif 'company_ids' in vals:
+                    _logger.info(
+                        "[create] Producto '%s' ya tenía company_ids definido en vals, se respeta: %s",
+                        product_name, vals['company_ids']
+                    )
                 else:
                     _logger.warning(
-                        "[create] No se pudo determinar la compañía activa. Se omitió company_ids para el producto '%s' (usuario: %s)",
-                        product_name, user.login
+                        "[create] No hay compañía activa para asignar al producto '%s'",
+                        product_name
                     )
                 processed_vals_list.append(new_vals)
             except Exception as e:
