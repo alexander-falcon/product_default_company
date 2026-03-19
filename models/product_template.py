@@ -9,86 +9,72 @@ class ProductTemplate(models.Model):
     _inherit = 'product.template'
 
     @api.model
-    def default_get(self, fields_list):
-        res = super().default_get(fields_list)
-
-        if 'company_ids' in fields_list and not res.get('company_ids'):
-            try:
-                user = self.env.user
-                company = (
-                    self.env.company if len(user.company_ids) > 1
-                    else user.company_id
-                )
-                if company:
-                    context_company = self.env.context.get('default_company_ids')
-                    if not context_company:
-                        company_sudo = company.sudo()
-                        res['company_ids'] = [(6, 0, [company_sudo.id])]
-                        _logger.info(
-                            "[default_get] Asignado company_ids='%s' (%s) a producto por defecto (usuario: %s, compañías permitidas: %s)",
-                            company_sudo.id, company_sudo.name, 
-                            user.login, len(user.company_ids)
-                        )
-                    else:
-                        _logger.info(
-                            "[default_get] Se respeta compañía del contexto: %s",
-                            context_company
-                        )
-                else:
-                    _logger.warning(
-                        "[default_get] No se pudo determinar la compañía activa para el usuario '%s'. No se asignó company_ids al producto.",
-                        user.login
-                    )
-            except Exception as e:
-                _logger.exception("[default_get] Error inesperado : %s",
-                    e
-                )
-        return res
-
-    @api.model_create_multi
-    def create(self, vals_list):
+    def _get_company_vals(self, values, check_context=True):
         user = self.env.user
         company = (
             self.env.company if len(user.company_ids) > 1
             else user.company_id
         )
+        
+        if not company:
+            return values
+            
+        company_sudo = company.sudo()
+        
+        if 'company_id' not in values:
+            if not (check_context and self.env.context.get('default_company_id')):
+                values['company_id'] = company_sudo.id
+                _logger.info(
+                    "Asignado company_id=%s (%s) por usuario %s",
+                    company_sudo.id, company_sudo.name, user.login
+                )
+        
+        if 'company_ids' not in values:
+            if not (check_context and self.env.context.get('default_company_ids')):
+                values['company_ids'] = [(6, 0, [company_sudo.id])]
+                _logger.info(
+                    "Asignado company_ids=%s (%s) por usuario %s",
+                    company_sudo.id, company_sudo.name, user.login
+                )
+        
+        return values
+    
+    @api.model
+    def default_get(self, fields_list):
+        res = super().default_get(fields_list)
+        
+        company_fields = [f for f in ['company_id', 'company_ids'] if f in fields_list]
+        if not company_fields:
+            return res
+            
+        try:
+            res = self._get_company_vals(res, check_context=True)
+        except Exception as e:
+            _logger.exception("[default_get] Error inesperado: %s", e)
+            
+        return res
+
+    @api.model_create_multi
+    def create(self, vals_list):
         processed_vals_list = []
+        
         for vals in vals_list:
             try:
-                product_name = vals.get('name', 'Sin nombre')
                 new_vals = vals.copy()
-
-                if 'company_ids' not in vals and company:
-                    company_sudo = company.sudo()
-                    new_vals['company_ids'] = [(6, 0, [company_sudo.id])]
-                    _logger.info(
-                        "[create] Asignado company_ids='%s' (%s) al producto '%s' (usuario: %s)",
-                        company_sudo.id, company_sudo.name, product_name, user.login
-                    )
-                elif 'company_ids' in vals:
-                    _logger.info(
-                        "[create] Producto '%s' ya tenía company_ids definido en vals, se respeta: %s",
-                        product_name, vals['company_ids']
-                    )
-                else:
-                    _logger.warning(
-                        "[create] No hay compañía activa para asignar al producto '%s'",
-                        product_name
-                    )
+                new_vals = self._get_company_vals(new_vals, check_context=False)
                 processed_vals_list.append(new_vals)
             except Exception as e:
                 _logger.exception(
-                    "[create] Error al intentar asignar company_ids al producto '%s': %s",
-                    product_name, e
+                    "[create] Error procesando vals: %s", e
                 )
                 processed_vals_list.append(vals)
 
         products = super(ProductTemplate, self.sudo()).create(processed_vals_list)
 
         _logger.info(
-            "[create] Creados %d productos con sudo() para el usuario %s",
-            len(products), user.login
+            "[create] Creados %d productos para usuario %s",
+            len(products), self.env.user.login
         )
         
         return products
-        
+    
