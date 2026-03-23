@@ -21,14 +21,6 @@ class ProductTemplate(models.Model):
             
         company_sudo = company.sudo()
         
-        if 'company_id' not in values:
-            if not (check_context and self.env.context.get('default_company_id')):
-                values['company_id'] = company_sudo.id
-                _logger.info(
-                    "Asignado company_id=%s (%s) por usuario %s",
-                    company_sudo.id, company_sudo.name, user.login
-                )
-        
         if 'company_ids' not in values:
             if not (check_context and self.env.context.get('default_company_ids')):
                 values['company_ids'] = [(6, 0, [company_sudo.id])]
